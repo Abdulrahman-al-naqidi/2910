@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Profile Finder</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161d29;
+    --pill: #0d1117;
+    --border: #243040;
+    --text: #f0f6fc;
+    --muted: #9aa7b8;
+    --link: #6cb2ff;
+    --gold: #f5c542;
+    --danger: #ff7b72;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 1000px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 2rem; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  form { display: flex; gap: 10px; }
+  input {
+    flex: 1; min-width: 0; padding: 12px 16px; font-size: 1rem; color: var(--text);
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  }
+  button {
+    padding: 12px 22px; font-size: 1rem; font-weight: 600; cursor: pointer;
+    color: #0d1117; background: var(--gold); border: 0; border-radius: 12px;
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  input:focus-visible, button:focus-visible, .chip:focus-visible, .repo h3 a:focus-visible {
+    outline: 2px solid var(--link); outline-offset: 2px;
+  }
+  .try { margin: 14px 0 28px; color: var(--muted); font-size: .95rem; }
+  .chip {
+    background: none; border: 0; padding: 0 2px; margin-left: 8px; font: inherit;
+    font-weight: 400; color: var(--link); cursor: pointer; border-radius: 4px;
+  }
+  .chip:hover { text-decoration: underline; }
+
+  .profile {
+    display: flex; gap: 30px; align-items: center;
+    background: var(--card); border: 1px solid var(--border); border-radius: 28px;
+    padding: 28px;
+  }
+  .avatar {
+    width: 150px; height: 150px; flex: none; border-radius: 50%;
+    border: 3px solid var(--gold); object-fit: cover; background: var(--pill);
+  }
+  .profile h2 { margin: 0 0 12px; font-size: 1.7rem; line-height: 1.2; }
+  .login { display: inline-block; color: var(--link); text-decoration: none; margin-bottom: 8px; }
+  .login:hover { text-decoration: underline; }
+  .bio { margin: 0 0 14px; color: var(--muted); max-width: 62ch; }
+  .stats { display: flex; flex-wrap: wrap; gap: 14px; }
+  .stat { background: var(--pill); border-radius: 12px; padding: 8px 14px; }
+  .stat b { color: var(--gold); }
+
+  h2.section { font-size: 1.4rem; margin: 32px 0 14px; }
+  .repos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .repo {
+    display: flex; flex-direction: column; justify-content: space-between; gap: 14px;
+    min-height: 150px; padding: 20px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+  }
+  .repo h3 { margin: 0 0 10px; font-size: 1.05rem; overflow-wrap: anywhere; }
+  .repo h3 a { color: var(--link); text-decoration: none; }
+  .repo h3 a:hover { text-decoration: underline; }
+  .repo p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+  .meta { display: flex; gap: 18px; color: var(--muted); font-size: .95rem; }
+
+  .msg { margin-top: 24px; color: var(--muted); }
+  .msg.error { color: var(--danger); }
+
+  @media (max-width: 800px) { .repos { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) {
+    .repos { grid-template-columns: 1fr; }
+    .profile { flex-direction: column; text-align: center; }
+    .stats { justify-content: center; }
+    form { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>GitHub Profile Finder</h1>
+  <p class="sub">Search any GitHub user to see their profile and latest repositories.</p>
+
+  <form id="form">
+    <input id="q" type="text" placeholder="Enter a GitHub username" aria-label="GitHub username" autocomplete="off" autofocus>
+    <button id="btn" type="submit">Search</button>
+  </form>
+
+  <div class="try">Try:
+    <button type="button" class="chip" data-user="torvalds">torvalds</button>
+    <button type="button" class="chip" data-user="gaearon">gaearon</button>
+    <button type="button" class="chip" data-user="sindresorhus">sindresorhus</button>
+  </div>
+
+  <div id="status" class="msg" role="status" aria-live="polite"></div>
+  <section id="profile" hidden></section>
+  <section id="repos-wrap" hidden>
+    <h2 class="section">Latest repositories</h2>
+    <div id="repos" class="repos"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var API = "https://api.github.com/users/";
+  var form = document.getElementById("form");
+  var input = document.getElementById("q");
+  var btn = document.getElementById("btn");
+  var statusEl = document.getElementById("status");
+  var profileEl = document.getElementById("profile");
+  var reposWrap = document.getElementById("repos-wrap");
+  var reposEl = document.getElementById("repos");
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  }
+  function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
+  function setStatus(text, isError) {
+    statusEl.textContent = text || "";
+    statusEl.className = "msg" + (isError ? " error" : "");
+  }
+  function clearResults() {
+    profileEl.hidden = true; reposWrap.hidden = true;
+    profileEl.textContent = ""; reposEl.textContent = "";
+  }
+
+  function renderProfile(u) {
+    profileEl.textContent = "";
+    var card = el("div", "profile");
+
+    var img = el("img", "avatar");
+    img.src = u.avatar_url; img.alt = (u.name || u.login) + " avatar";
+    card.appendChild(img);
+
+    var info = el("div");
+    info.appendChild(el("h2", null, u.name || u.login));
+    var a = el("a", "login", "@" + u.login);
+    a.href = u.html_url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    info.appendChild(a);
+    if (u.bio) info.appendChild(el("p", "bio", u.bio));
+
+    var stats = el("div", "stats");
+    [["public_repos", "repos"], ["followers", "followers"], ["following", "following"]].forEach(function (s) {
+      var pill = el("div", "stat");
+      pill.appendChild(el("b", null, fmt(u[s[0]])));
+      pill.appendChild(document.createTextNode(" " + s[1]));
+      stats.appendChild(pill);
+    });
+    info.appendChild(stats);
+    card.appendChild(info);
+    profileEl.appendChild(card);
+    profileEl.hidden = false;
+  }
+
+  function renderRepos(list) {
+    reposEl.textContent = "";
+    if (!list.length) {
+      reposEl.appendChild(el("p", "msg", "This user has no public repositories yet."));
+    }
+    list.forEach(function (r) {
+      var card = el("article", "repo");
+      var top = el("div");
+      var h = el("h3");
+      var a = el("a", null, r.name);
+      a.href = r.html_url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      h.appendChild(a);
+      top.appendChild(h);
+      if (r.description) top.appendChild(el("p", null, r.description));
+      card.appendChild(top);
+
+      var meta = el("div", "meta");
+      meta.appendChild(el("span", null, "\u2B50 " + fmt(r.stargazers_count)));
+      if (r.language) meta.appendChild(el("span", null, r.language));
+      card.appendChild(meta);
+      reposEl.appendChild(card);
+    });
+    reposWrap.hidden = false;
+  }
+
+  async function getJSON(url) {
+    var res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
+    if (res.status === 404) throw new Error("NOT_FOUND");
+    if (res.status === 403 || res.status === 429) throw new Error("RATE_LIMIT");
+    if (!res.ok) throw new Error("HTTP_" + res.status);
+    return res.json();
+  }
+
+  async function search(name) {
+    name = name.trim();
+    if (!name) { setStatus("Enter a GitHub username to search.", true); return; }
+    clearResults();
+    setStatus("Searching for " + name + "\u2026");
+    btn.disabled = true;
+    try {
+      var enc = encodeURIComponent(name);
+      var results = await Promise.all([
+        getJSON(API + enc),
+        getJSON(API + enc + "/repos?sort=updated&per_page=6")
+      ]);
+      renderProfile(results[0]);
+      renderRepos(results[1]);
+      setStatus("");
+    } catch (e) {
+      if (e.message === "NOT_FOUND") setStatus("No GitHub user named \u201C" + name + "\u201D. Check the spelling and try again.", true);
+      else if (e.message === "RATE_LIMIT") setStatus("GitHub\u2019s request limit is reached. Wait a few minutes and try again.", true);
+      else setStatus("Could not reach GitHub. Check your connection and try again.", true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  form.addEventListener("submit", function (e) { e.preventDefault(); search(input.value); });
+  document.querySelectorAll(".chip").forEach(function (c) {
+    c.addEventListener("click", function () { input.value = c.dataset.user; search(c.dataset.user); });
+  });
+})();
+</script>
+</body>
+</html>
